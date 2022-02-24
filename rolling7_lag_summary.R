@@ -10,6 +10,7 @@
 library(dplyr)    #data wrangling
 library(ggplot2)  #plots
 library(zoo)      #rolling averages
+library(cluster)  #kmeans
 #library(modeest)  #compute modes of lag distributions - NO LONGER USED
 
 #clear the environment
@@ -310,6 +311,111 @@ qc <- summ_by_lag %>% group_by(state_abbr) %>% summarize(freq=n())
 qc <- summ_pcts5 %>% group_by(state_abbr) %>% summarize(freq=n())
 
 
+
+############# Impute average change between threshold
+means_25pct <- summ_pcts %>% group_by(state_abbr) %>% summarize(mean25 = mean(lag_25pct, na.rm=T))
+
+summ_pcts_imp1 <- left_join(summ_pcts, means_25pct, by="state_abbr")
+
+summ_pcts_imp1$change_25_50  <- summ_pcts_imp1$lag_50pct - summ_pcts_imp1$lag_25pct
+summ_pcts_imp1$change_50_75  <- summ_pcts_imp1$lag_75pct - summ_pcts_imp1$lag_50pct
+summ_pcts_imp1$change_75_90  <- summ_pcts_imp1$lag_90pct - summ_pcts_imp1$lag_75pct
+summ_pcts_imp1$change_90_95  <- summ_pcts_imp1$lag_95pct - summ_pcts_imp1$lag_90pct
+summ_pcts_imp1$change_95_99  <- summ_pcts_imp1$lag_99pct - summ_pcts_imp1$lag_95pct
+summ_pcts_imp1$change_99_100 <- summ_pcts_imp1$lag_100pct - summ_pcts_imp1$lag_99pct
+
+means_change <- summ_pcts_imp1 %>% group_by(state_abbr) %>%
+  summarize(mean_change_25_50 = mean(change_25_50, na.rm=T),
+            mean_change_50_75 = mean(change_50_75, na.rm=T),
+            mean_change_75_90 = mean(change_75_90, na.rm=T),
+            mean_change_90_95 = mean(change_90_95, na.rm=T),
+            mean_change_95_99 = mean(change_95_99, na.rm=T),
+            mean_change_99_100 = mean(change_99_100, na.rm=T))
+
+summ_pcts_imp2 <- left_join(summ_pcts_imp1, means_change, by="state_abbr")
+
+summ_pcts_imp2$lag_25pct_impute  <- if_else(is.na(summ_pcts_imp2$lag_25pct), summ_pcts_imp2$mean25, as.double(summ_pcts_imp2$lag_25pct))
+summ_pcts_imp2$lag_50pct_impute  <- if_else(is.na(summ_pcts_imp2$lag_50pct), summ_pcts_imp2$lag_25pct_impute + summ_pcts_imp2$mean_change_25_50, as.double(summ_pcts_imp2$lag_50pct))
+summ_pcts_imp2$lag_75pct_impute  <- if_else(is.na(summ_pcts_imp2$lag_75pct), summ_pcts_imp2$lag_50pct_impute + summ_pcts_imp2$mean_change_50_75, as.double(summ_pcts_imp2$lag_75pct))
+summ_pcts_imp2$lag_90pct_impute  <- if_else(is.na(summ_pcts_imp2$lag_90pct), summ_pcts_imp2$lag_75pct_impute + summ_pcts_imp2$mean_change_75_90, as.double(summ_pcts_imp2$lag_90pct))
+summ_pcts_imp2$lag_95pct_impute  <- if_else(is.na(summ_pcts_imp2$lag_95pct), summ_pcts_imp2$lag_90pct_impute + summ_pcts_imp2$mean_change_90_95, as.double(summ_pcts_imp2$lag_95pct))
+summ_pcts_imp2$lag_99pct_impute  <- if_else(is.na(summ_pcts_imp2$lag_99pct), summ_pcts_imp2$lag_95pct_impute + summ_pcts_imp2$mean_change_95_99, as.double(summ_pcts_imp2$lag_99pct))
+summ_pcts_imp2$lag_100pct_impute <- if_else(is.na(summ_pcts_imp2$lag_100pct), summ_pcts_imp2$lag_99pct_impute + summ_pcts_imp2$mean_change_99_100, as.double(summ_pcts_imp2$lag_100pct))
+
+summ_pcts_imp2$'7days_ending_on' <- summ_pcts_imp2$submission_date+3
+
+summ_pcts_imp3 <- filter(summ_pcts_imp2, submission_date>"2021-04-07" & submission_date<"2021-11-24")
+
+
+
+
+########################### hierarchical clustering
+# recreate clustering, add scree plot
+temp <- summ_pcts_imp3 %>% group_by(state_abbr) %>%
+  summarize(med25 = quantile(lag_25pct_impute, .50, na.rm=T),
+            med50 = quantile(lag_50pct_impute, .50, na.rm=T),
+            med75 = quantile(lag_75pct_impute, .50, na.rm=T),
+            med90 = quantile(lag_90pct_impute, .50, na.rm=T),
+            med95 = quantile(lag_95pct_impute, .50, na.rm=T),
+            med99 = quantile(lag_99pct_impute, .50, na.rm=T),
+            med100 = quantile(lag_100pct_impute, .50, na.rm=T))
+
+#recode - could also just exclude since they should be in their own group anyways
+temp$med25[is.na(temp$med25)] <- -100
+temp$med50[is.na(temp$med50)] <- -100
+temp$med75[is.na(temp$med75)] <- -100
+temp$med90[is.na(temp$med90)] <- -100
+temp$med95[is.na(temp$med95)] <- -100
+temp$med99[is.na(temp$med99)] <- -100
+temp$med100[is.na(temp$med100)] <- -100
+
+temp2 <- select(temp, 2:8)
+row.names(temp2) <- temp$state_abbr
+
+hc <- hclust(dist(temp2, method="euclidean"), "ward.D2")
+plot(hc)
+
+temp2$memb6 <- cutree(hc, k=6)
+temp2$memb5 <- cutree(hc, k=5)
+temp2$memb4 <- cutree(hc, k=4)
+temp2$memb3 <- cutree(hc, k=3)
+temp2$memb2 <- cutree(hc, k=2)
+temp2$memb7 <- cutree(hc, k=7)
+temp2$memb8 <- cutree(hc, k=8)
+temp2$memb9 <- cutree(hc, k=9)
+temp2$memb10 <- cutree(hc, k=10)
+
+# try 1-10 clusters
+c1 <- kmeans(temp2, 1, nstart=25)
+c2 <- kmeans(temp2, 2, nstart=25)
+c3 <- kmeans(temp2, 3, nstart=25)
+c4 <- kmeans(temp2, 4, nstart=25)
+c5 <- kmeans(temp2, 5, nstart=25)
+c6 <- kmeans(temp2, 6, nstart=25)
+c7 <- kmeans(temp2, 7, nstart=25)
+c8 <- kmeans(temp2, 8, nstart=25)
+c9 <- kmeans(temp2, 9, nstart=25)
+c10 <- kmeans(temp2, 10, nstart=25)
+
+rm(wss_values)
+wss_values <- c1$tot.withinss
+wss_values <- rbind(wss_values, c2$tot.withinss)
+wss_values <- rbind(wss_values, c3$tot.withinss)
+wss_values <- rbind(wss_values, c4$tot.withinss)
+wss_values <- rbind(wss_values, c5$tot.withinss)
+wss_values <- rbind(wss_values, c6$tot.withinss)
+wss_values <- rbind(wss_values, c7$tot.withinss)
+wss_values <- rbind(wss_values, c8$tot.withinss)
+wss_values <- rbind(wss_values, c9$tot.withinss)
+wss_values <- rbind(wss_values, c10$tot.withinss)
+wss_values <- as.data.frame(wss_values)
+wss_values$k <- seq(1:10)
+
+plot(wss_values$k, wss_values$V1,
+     type="b", pch = 19, frame = FALSE, 
+     xlab="Number of clusters K",
+     ylab="Total within-clusters sum of squares")
+
 ################ SAVED OUTPUTS ##########################
 
  #write.csv(lags_rolling, file=paste0(path_share,"rolling7_calculations-2021-08-13.csv"))
@@ -320,6 +426,8 @@ qc <- summ_pcts5 %>% group_by(state_abbr) %>% summarize(freq=n())
  #These are the files Jon typically uses
  write.csv(summ_by_lag, file=paste0(path_share,"rolling7_summary_of_ratio_by_jurisdiction_lag-2021-12-17.csv"))
  write.csv(summ_pcts5, file=paste0(path_share, "rolling7_lag_summary_NA_equal_MaxLagPlus1-2021-12-17.csv"))
+ write.csv(summ_pcts_imp3, file=paste0(path_share, "rolling7_lag_summary_impute_avg_change-2022-02-22.csv"))
+ 
  
  #write.csv(impute3, file=paste0(path_share,"rolling7_impute_mode_by_date.csv"))
  #write.csv(pct_summary_impute_mode, file=paste0(path_share,"rolling7_lag_summary_impute_mode.csv"))
