@@ -37,7 +37,7 @@ path_share <- paste0("C:/Users/", profile, "/OneDrive - CDC/Deployment/Lag/")
 #save a copy of the R dataset - !!! only run when the CSV is updated
 #saveRDS(d1, file=paste0(path_share, "Lag_AGG_LL-2021-12-17.RDS"))
 
-d1 <- readRDS(file=paste0(path_share, "Lag_AGG_LL-2021-11-30.RDS"))
+d1 <- readRDS(file=paste0(path_share, "Lag_AGG_LL-2021-12-17.RDS"))
 
 min_created <- min(d1$created)
 max_created <- max(d1$created)
