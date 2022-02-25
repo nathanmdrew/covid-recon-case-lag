@@ -18,33 +18,26 @@ rm(list=ls())
 
 ##Call local user profile
 profile <- Sys.getenv("USERNAME")
-#path_share <- paste0("C:/Users/", profile, "/CDC/Data, Analytics, Visualization Task Force - Special Data Requests and Analytics Team/Lag/")
 path_share <- paste0("C:/Users/", profile, "/OneDrive - CDC/Deployment/Lag/")
 
 
 
-#read Jon's LAG file
+#read LAG file
 #snapshots of line level and aggregate datasets over the past 
-# TODO - most recent version = 12/17/2021
-# only run when the CSV is updated
+#most recent version = 12/17/2021
+# !!! only run when the CSV is updated
+
 #d1 <- read.csv(file=paste0(path_share, "Full Recon Table.csv"), header=T)
 
-#temp <- data.frame(names=names(d1))
-
-#format dates as dates - only run when the CSV is updated
+#format dates as dates - !!! only run when the CSV is updated
 #d1 <- d1 %>%
 #  mutate(submission_date = as.Date(submission_date, format="%Y-%m-%d"),
 #         created = as.Date(created, format="%Y-%m-%d"))
 
-#save a copy of the R dataset - only run when the CSV is updated
+#save a copy of the R dataset - !!! only run when the CSV is updated
 #saveRDS(d1, file=paste0(path_share, "Lag_AGG_LL-2021-12-17.RDS"))
 
 d1 <- readRDS(file=paste0(path_share, "Lag_AGG_LL-2021-11-30.RDS"))
-
-#str(d1$submission_date)
-#qc <- distinct(d1, state_abbr) #should be 60
-#qc <- d1 %>% group_by(state_abbr) %>% summarize(freq=n()) #should be nrow(d1)/60
-
 
 min_created <- min(d1$created)
 max_created <- max(d1$created)
@@ -60,12 +53,6 @@ lags_rolling <- d2 %>%
          agg_new_07day = zoo::rollmean(agg_new_cases, k=7, fill=NA),
          pct_of_agg_07day = (ll_new_07day/agg_new_07day)*100)
 
-# qc <- lags_rolling %>% filter(pct_of_agg_07day<0)
-# qc <- lags_rolling %>% filter(ll_new_07day==0, agg_new_07day==0)
-# qc <- lags_rolling %>% filter(pct_of_agg_07day=="NaN")
-# qc$pct_of_agg_07day <- if_else(qc$pct_of_agg_07day=="NaN",
-#                                          100,
-#                                          qc$pct_of_agg_07day)
 
 # fix ratio for when 7 day average of aggregate is 0 (applies to Territories)
 lags_rolling$pct_of_agg_07day <- if_else(lags_rolling$pct_of_agg_07day=="NaN",
@@ -77,22 +64,14 @@ lags_rolling2 <-  lags_rolling %>%
   filter(!is.na(ll_new_07day)) %>%
   arrange(submission_date, created) %>%
   mutate(lag_days = as.integer(created - (submission_date + 4)),#in other words, time since first CREATED
-         `7days_ending_on`=submission_date+3) %>% #to align with Jon's JMP view
+         `7days_ending_on`=submission_date+3) %>% #to align with JMP view
   filter(lag_days>0) %>%
   filter(submission_date >= min_created-4) #should keep first 7 day window
-
-#temp <- lags_rolling2 %>% filter(lag_days < 1)
-#temp2 <- lags_rolling2 %>% filter(lag_days==1)
-#temp3 <- d2 %>% filter(state_abbr=="AL") %>% filter(created=="2021-04-12")
-#qc <- lags_rolling2 %>% filter(submission_date <= "2021-04-07")
 
 max_lags <- lags_rolling2 %>% 
             select(submission_date, lag_days) %>% 
             group_by(submission_date) %>% 
             summarize(maxlag=max(lag_days))
-
-# qc2 <- lags_rolling2 %>% filter(state_abbr=="CA") %>% select(state_abbr, created, submission_date, ll_new_07day, agg_new_07day, pct_of_agg_07day, lag_days)
-# qc2b <- qc2 %>% filter(submission_date=="2021-02-27")
 
 lags_rolling2$ind_pct25 <- if_else(lags_rolling2$pct_of_agg_07day >= 25, 1, 0)
 lags_rolling2$ind_pct50 <- if_else(lags_rolling2$pct_of_agg_07day >= 50, 1, 0)
@@ -192,15 +171,6 @@ pct_summary <- summ_pcts2 %>%
 summ_pcts3 <- left_join(summ_pcts2, max_lags, by="submission_date")
 max_lag <- max(max_lags$maxlag)
 
-# Previous method - doesn't accurately represent recent timeframes
-# summ_pcts3$lag_25pct <- if_else(is.na(summ_pcts3$lag_25pct), summ_pcts3$maxlag+1, as.double(summ_pcts3$lag_25pct))
-# summ_pcts3$lag_50pct <- if_else(is.na(summ_pcts3$lag_50pct), summ_pcts3$maxlag+1, as.double(summ_pcts3$lag_50pct))
-# summ_pcts3$lag_75pct <- if_else(is.na(summ_pcts3$lag_75pct), summ_pcts3$maxlag+1, as.double(summ_pcts3$lag_75pct))
-# summ_pcts3$lag_90pct <- if_else(is.na(summ_pcts3$lag_90pct), summ_pcts3$maxlag+1, as.double(summ_pcts3$lag_90pct))
-# summ_pcts3$lag_95pct <- if_else(is.na(summ_pcts3$lag_95pct), summ_pcts3$maxlag+1, as.double(summ_pcts3$lag_95pct))
-# summ_pcts3$lag_99pct <- if_else(is.na(summ_pcts3$lag_99pct), summ_pcts3$maxlag+1, as.double(summ_pcts3$lag_99pct))
-# summ_pcts3$lag_100pct <- if_else(is.na(summ_pcts3$lag_100pct), summ_pcts3$maxlag+1, as.double(summ_pcts3$lag_100pct))
-
 summ_pcts3$lag_25pct <- if_else(is.na(summ_pcts3$lag_25pct), max_lag+1, as.double(summ_pcts3$lag_25pct))
 summ_pcts3$lag_50pct <- if_else(is.na(summ_pcts3$lag_50pct), max_lag+1, as.double(summ_pcts3$lag_50pct))
 summ_pcts3$lag_75pct <- if_else(is.na(summ_pcts3$lag_75pct), max_lag+1, as.double(summ_pcts3$lag_75pct))
@@ -219,7 +189,6 @@ summ_pcts4$lag_90pct <- if_else(is.na(summ_pcts4$lag_90pct), summ_pcts4$maxlag+1
 summ_pcts4$lag_95pct <- if_else(is.na(summ_pcts4$lag_95pct), summ_pcts4$maxlag+1, as.double(summ_pcts4$lag_95pct))
 summ_pcts4$lag_99pct <- if_else(is.na(summ_pcts4$lag_99pct), summ_pcts4$maxlag+1, as.double(summ_pcts4$lag_99pct))
 summ_pcts4$lag_100pct <- if_else(is.na(summ_pcts4$lag_100pct), summ_pcts4$maxlag+1, as.double(summ_pcts4$lag_100pct))
-
 
 
 pct_summary_maxlag <- summ_pcts4 %>%
@@ -291,8 +260,6 @@ summ_pcts5 <- summ_pcts4 %>%
 
 # For a given jurisdiction and lag, summarize percent of agg
 # Ignore all missings
-#qc <- lags_rolling2 %>% filter(is.na(pct_of_agg_07day))
-#temp <- min(d1$created)
 
 summ_by_lag <- lags_rolling2 %>%
                group_by(state_abbr, lag_days) %>%
@@ -360,7 +327,7 @@ temp <- summ_pcts_imp3 %>% group_by(state_abbr) %>%
             med99 = quantile(lag_99pct_impute, .50, na.rm=T),
             med100 = quantile(lag_100pct_impute, .50, na.rm=T))
 
-#recode - could also just exclude since they should be in their own group anyways
+#recode nonreporters
 temp$med25[is.na(temp$med25)] <- -100
 temp$med50[is.na(temp$med50)] <- -100
 temp$med75[is.na(temp$med75)] <- -100
@@ -418,66 +385,9 @@ plot(wss_values$k, wss_values$V1,
 
 ################ SAVED OUTPUTS ##########################
 
- #write.csv(lags_rolling, file=paste0(path_share,"rolling7_calculations-2021-08-13.csv"))
- #write.csv(summ_pcts, file=paste0(path_share,"rolling7_lag_summary-2021-08-13.csv"))
- #write.csv(pct_summary, file=paste0(path_share,"rolling7_summary_of_percentages-2021-08-13.csv"))
- #write.csv(pct_summary_maxlag, file=paste0(path_share,"REV_rolling7_summary_of_percentages_NA_equal_MaxLagPlus1-2021-08-16.csv"))
- 
- #These are the files Jon typically uses
  write.csv(summ_by_lag, file=paste0(path_share,"rolling7_summary_of_ratio_by_jurisdiction_lag-2021-12-17.csv"))
  write.csv(summ_pcts5, file=paste0(path_share, "rolling7_lag_summary_NA_equal_MaxLagPlus1-2021-12-17.csv"))
  write.csv(summ_pcts_imp3, file=paste0(path_share, "rolling7_lag_summary_impute_avg_change-2022-02-22.csv"))
  
- 
- #write.csv(impute3, file=paste0(path_share,"rolling7_impute_mode_by_date.csv"))
- #write.csv(pct_summary_impute_mode, file=paste0(path_share,"rolling7_lag_summary_impute_mode.csv"))
- 
 #########################################################
  
- # why are some medians = 116.5?
- # recreate jon's summary
-qc <- summ_pcts5 %>% 
-   group_by(state_abbr) %>% 
-   summarize(
-     median25 = median(lag_25pct),
-     median50 = median(lag_50pct),
-     median75 = median(lag_75pct),
-     median90 = median(lag_90pct),
-     median95 = median(lag_95pct),
-     median99 = median(lag_99pct),
-     median100 = median(lag_100pct)
-   )
- 
- #seems to be jurisdictions that dont report
-qc2 <- summ_pcts5 %>%
-  filter(state_abbr=="TX") #yep - imputations range from 2-231, median=116.5
-
-
-ggplot(data=summ_pcts5, aes(x=lag_25pct)) +
-   geom_histogram()
-
-summary(summ_pcts5$lag_25pct)
-summary(summ_pcts5$lag_50pct)
-summary(summ_pcts5$lag_75pct)
-summary(summ_pcts5$lag_90pct)
-summary(summ_pcts5$lag_95pct)
-summary(summ_pcts5$lag_99pct)
-summary(summ_pcts5$lag_100pct)
- 
-
-ggplot(data=summ_by_lag, aes(x=lag_days, y=mean_pct_of_agg_07day, group=state_abbr)) +
-  geom_line()
-
-qc <- summ_by_lag %>% filter(mean_pct_of_agg_07day>500) #CT+RI+territories are weird
-qc <- summ_by_lag %>% filter(mean_pct_of_agg_07day<0) #CA weird
-
-qc <- distinct(summ_by_lag, state_abbr)
-qc <- distinct(d1, state_name, state_abbr)
-
-# omit territories
-temp <- summ_by_lag %>% filter(state_abbr != "GU" & state_abbr != "FSM" & state_abbr != "AS"
-                                & state_abbr != "RMI" & state_abbr != "PW" & state_abbr != "MP"
-                               & state_abbr != "VI")
-
-ggplot(data=temp, aes(x=lag_days, y=mean_pct_of_agg_07day, group=state_abbr)) +
-  geom_line()
